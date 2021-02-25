@@ -1,6 +1,6 @@
-##this is A ThreadPool written in C++11
+## This is A ThreadPool written in C++11
 
-###Basic Usage:
+### Basic Usage:
 ```
 std::future<int> future;
 
@@ -12,7 +12,7 @@ future = ThreadPool::Instance().Execute([] (int i) -> int {
 printf("async func return %d.\n", future.get());
 ```
 
-###Advance Usage:
+### Advance Usage:
 ```
 // Define the serial_tag of the tasks which you want to execute serially
 int taskA_serial_tag = 1;

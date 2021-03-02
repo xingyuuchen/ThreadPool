@@ -34,7 +34,7 @@ for (int i = 0; i < 4; ++i) {
 }
 printf("main thread done.\n");
 ```
-A possible output of code above may be:
+A possible output may be:
 ```
 main thread done.
 task A0 running...

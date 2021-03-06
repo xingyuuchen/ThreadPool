@@ -7,8 +7,34 @@
 #include <condition_variable>
 #include <functional>
 #include <future>
-#include <queue>
 #include <unordered_set>
+#include <chrono>
+#include <iomanip>
+
+
+inline uint64_t gettickcount() {
+    using namespace std::chrono;
+    time_point<std::chrono::system_clock, milliseconds> tp =
+            time_point_cast<milliseconds>(system_clock::now());
+    return tp.time_since_epoch().count();
+}
+
+struct TaskProfile {
+    enum TTiming {
+        kImmediate,
+        kAfter,
+        kPeriodic,
+    };
+    TaskProfile(TTiming _timing, int _serial_tag, int _after, int _period)
+            : type(_timing), serial_tag(_serial_tag), after(_after), period(_period) {
+        if (type != kImmediate) { record = ::gettickcount(); }
+    }
+    TTiming     type;
+    int         serial_tag;
+    int         after;
+    int         period;
+    uint64_t    record; // for kAfter:creating ts ; for kPeriodic:last running ts.
+};
 
 class ThreadPool {
   public:
@@ -25,7 +51,8 @@ class ThreadPool {
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     Execute(F&& _f, Args&&... _args) {
-        return Execute(-1, _f, _args...);
+        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kImmediate, -1, 0, 0);
+        return __AddTask(profile, _f, _args...);
     }
     
     /**
@@ -34,6 +61,51 @@ class ThreadPool {
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     Execute(int _serial_tag, F&& _f, Args&&... _args) {
+        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kImmediate, _serial_tag, 0, 0);
+        return __AddTask(profile, _f, _args...);
+    }
+    
+    template<class F, class... Args>
+    std::future<typename std::result_of<F(Args...)>::type>
+    ExecuteAfter(int _after_millis, F&& _f, Args&&... _args) {
+        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kAfter, -1, _after_millis, 0);
+        return __AddTask(profile, _f, _args...);
+    }
+    
+    template<class F, class... Args>
+    std::future<typename std::result_of<F(Args...)>::type>
+    ExecutePeriodic(int _period_millis, F&& _f, Args&&... _args) {
+        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kPeriodic, -1, 0, _period_millis);
+        return __AddTask(profile, _f, _args...);
+    }
+    
+  private:
+
+    using ScopeLock = std::unique_lock<std::mutex>;
+
+    ThreadPool(size_t _n_threads = 4);
+
+    /**
+     * see if there is any task to do.
+     *
+     * @return:  the index of kImmediate task if exists, else the index of task with
+     *           the minimum time to wait until its (next) execution if exists, else -1.
+     */
+    ssize_t __SelectTask();
+
+    void __CreateWorkerThread();
+
+    void __DeleteTask(size_t _idx);
+    
+    /**
+     * @param _now: if it is not given, it will be updated inside the function.
+     */
+    uint64_t __ComputeWaitTime(TaskProfile *_profile, uint64_t _now = 0);
+
+
+    template<class F, class... Args>
+    std::future<typename std::result_of<F(Args...)>::type>
+    __AddTask(TaskProfile *_profile, F&& _f, Args&&... _args) {
         using return_t = typename std::result_of<F(Args...)>::type;
         using pack_task_t = std::packaged_task<return_t(void)>;
         
@@ -41,22 +113,20 @@ class ThreadPool {
         std::future<return_t> ret = task->get_future();
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            tasks_.push_back(std::make_pair(_serial_tag, [=] { (*task)(); }));
+            tasks_.push_back(std::make_pair(_profile, [=] { (*task)(); }));
         }
         cv_.notify_one();
         return ret;
     }
 
-  private:
-    ThreadPool(size_t _n_threads = 4);
 
   private:
-    std::vector<std::thread>                            workers_;
-    std::vector<std::pair<int, std::function<void()>>>  tasks_;
-    std::unordered_set<int>                             running_serial_tags_;
-    std::mutex                                          mutex_;
-    std::condition_variable                             cv_;
-    bool                                                stop_;
+    std::vector<std::thread>                                        workers_;
+    std::vector<std::pair<TaskProfile*, std::function<void()>>>     tasks_;
+    std::unordered_set<int>                                         running_serial_tags_;
+    std::mutex                                                      mutex_;
+    std::condition_variable                                         cv_;
+    bool                                                            stop_;
     
 };
 

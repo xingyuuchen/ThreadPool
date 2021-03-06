@@ -12,7 +12,7 @@ future = ThreadPool::Instance().Execute([] (int i) -> int {
 printf("async func return %d.\n", future.get());
 ```
 
-### Advance Usage (execute with serial tag):
+### Advance Usage1 (execute with serial tag):
 ```
 // Define the serial_tag of the tasks which you want to execute serially
 int taskA_serial_tag = 1;
@@ -58,3 +58,39 @@ As you can see above, tasks with the same `serial_tag` execute serially.
 
 This is useful for scenarios where you just want the tasks execute 
 asynchronously from the main thread but not concurrently themselves.
+
+### Advance Usage2 (execute after...):
+```
+ThreadPool::Instance().ExecuteAfter(2000, [=] {
+    printf("task A running...\n");
+    sleep(1);
+    printf("task A done!\n");
+});
+ThreadPool::Instance().ExecuteAfter(1000, [=] {
+    printf("task B running...\n");
+    sleep(1);
+    printf("task B done!\n");
+});
+printf("main thread done.\n");
+```
+The output may go as follows:
+```
+task B running...   # at 1th s
+task B done!        # at 2th s
+task A running...
+task A done!        # at 3th s
+```
+or
+```
+task B running...   # at 1th s
+task A running...   # at 2th s
+task B done!
+task A done!        # at 3th s
+```
+
+### Advance Usage3 (execute periodically):
+```
+ThreadPool::Instance().ExecutePeriodic(1000, [=] {
+    printf("task running...\n");
+});
+```

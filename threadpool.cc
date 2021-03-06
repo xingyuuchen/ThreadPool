@@ -27,67 +27,96 @@ void ThreadPool::__CreateWorkerThread() {
 
                         if (wait_time == 0) { break; }
 
-                        size_t old_idx = idx;
-                        bool another = this->cv_.wait_for(lock, std::chrono::milliseconds(wait_time),
-                                [&, this] { idx = this->__SelectTask(); return idx != old_idx; });
-                        if (another) { continue; }
+                        size_t curr_size = tasks_.size();
+                        bool is_new = this->cv_.wait_for(lock, std::chrono::milliseconds(wait_time),
+                                [&, this] { return this->__IsHigherPriorityTaskAddWhenWaiting(profile, curr_size); });
+                        if (is_new) {  // Comes a task that needs to be done earlier
+                            continue;
+                        }
                         break;
                     }
                     // no task needs to be executed or will be executed
-                    if (this->stop_) { return; }
+                    return;
                 }
     
                 this->running_serial_tags_.insert(profile->serial_tag);
                 task = std::move(this->tasks_[idx].second);
-                if (profile->type == TaskProfile::kPeriodic) { profile->record = ::gettickcount(); }
-                else { tasks_.erase(tasks_.begin() + idx); }
+                if (profile->type == TaskProfile::kPeriodic) {
+                    profile->record = ::gettickcount();
+                    profile->seq = TaskProfile::__MakeSeq();
+                } else {
+                    tasks_.erase(tasks_.begin() + idx);
+                }
             }
             task();
             {
                 ScopeLock lock(this->mutex_);
                 this->running_serial_tags_.erase(profile->serial_tag);
-                if (profile->type != TaskProfile::kPeriodic) { delete profile; }
+                if (profile->type == TaskProfile::kPeriodic) {
+                    tasks_[idx].second = std::move(task);
+                } else {
+                    delete profile;
+                }
             }
         }
     });
 }
 
 ssize_t ThreadPool::__SelectTask() {
-    int serial_tag;
-    TaskProfile *profile;
+    static uint64_t last_selected_seq = TaskProfile::kInvalidSeq;
     
     uint64_t now = ::gettickcount();
     uint64_t min_wait_time = 0xffffffffffffffff;
     ssize_t min_wait_time_task_idx = -1;
     
     for (size_t idx = 0; idx < tasks_.size(); ++idx) {
-        profile = tasks_[idx].first;
+        TaskProfile *profile = tasks_[idx].first;
 
         if (profile->type == TaskProfile::kImmediate) {
-            serial_tag = profile->serial_tag;
+            int serial_tag = profile->serial_tag;
             if (serial_tag < 0 || running_serial_tags_.find(serial_tag)
                       == running_serial_tags_.end()) {
-                return idx;
+                if (profile->seq != last_selected_seq) {
+                    last_selected_seq = profile->seq;
+                    return idx;
+                }
             }
 
         } else {
             uint64_t wait_time = __ComputeWaitTime(profile, now);
     
-            if (wait_time == 0) { return idx; }
-            printf("oh %llu\n", wait_time);
+            if (wait_time == 0) {
+                if (last_selected_seq != idx) {
+                    last_selected_seq = idx;
+                    return idx;
+                }
+                continue;
+            }
             if (wait_time < min_wait_time) {
                 min_wait_time = wait_time;
                 min_wait_time_task_idx = idx;
             }
         }
     }
+    if (min_wait_time_task_idx != -1) {
+        if (last_selected_seq == tasks_[min_wait_time_task_idx].first->seq) {
+            return -1;
+        }
+        last_selected_seq = tasks_[min_wait_time_task_idx].first->seq;
+    }
     return min_wait_time_task_idx;
 }
 
-void ThreadPool::__DeleteTask(size_t _idx) {
-    if (_idx < 0 || _idx >= tasks_.size()) { return; }
-    
-
+bool ThreadPool::__IsHigherPriorityTaskAddWhenWaiting(TaskProfile *_lhs, size_t _old_n_tasks)  {
+    if (tasks_.size() == _old_n_tasks) {
+        return false;
+    }
+    TaskProfile *rhs = tasks_.back().first;
+    if (rhs->type == TaskProfile::kImmediate) {
+        return true;
+    }
+    uint64_t now = ::gettickcount();
+    return __ComputeWaitTime(rhs, now) < __ComputeWaitTime(_lhs, now);
 }
 
 uint64_t ThreadPool::__ComputeWaitTime(TaskProfile *_profile, uint64_t _now) {
@@ -104,7 +133,6 @@ uint64_t ThreadPool::__ComputeWaitTime(TaskProfile *_profile, uint64_t _now) {
     return ret > 0 ? ret : 0;
 }
 
-
 ThreadPool::~ThreadPool() {
     {
         ScopeLock lock(mutex_);
@@ -117,11 +145,11 @@ ThreadPool::~ThreadPool() {
     }
     {
         ScopeLock lock(mutex_);
-        for (size_t i = 0; i < tasks_.size(); ++i) {
-            TaskProfile *profile = tasks_[i].first;
+        for (auto & task : tasks_) {
+            TaskProfile *profile = task.first;
             if (profile) {
                 delete profile;
-                tasks_[i].first = NULL;
+                task.first = NULL;
             }
         }
     }

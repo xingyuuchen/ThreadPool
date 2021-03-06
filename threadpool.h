@@ -26,14 +26,20 @@ struct TaskProfile {
         kPeriodic,
     };
     TaskProfile(TTiming _timing, int _serial_tag, int _after, int _period)
-            : type(_timing), serial_tag(_serial_tag), after(_after), period(_period) {
+            : type(_timing), serial_tag(_serial_tag), after(_after), period(_period), seq(__MakeSeq()) {
         if (type != kImmediate) { record = ::gettickcount(); }
+    }
+    static uint64_t __MakeSeq() {
+        static uint64_t seq = 0;
+        return ++seq;
     }
     TTiming     type;
     int         serial_tag;
     int         after;
     int         period;
     uint64_t    record; // for kAfter:creating ts ; for kPeriodic:last running ts.
+    uint64_t    seq;
+    static const uint64_t kInvalidSeq = 0;
 };
 
 class ThreadPool {
@@ -73,10 +79,9 @@ class ThreadPool {
     }
     
     template<class F, class... Args>
-    std::future<typename std::result_of<F(Args...)>::type>
-    ExecutePeriodic(int _period_millis, F&& _f, Args&&... _args) {
+    void ExecutePeriodic(int _period_millis, F&& _f, Args&&... _args) {
         TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kPeriodic, -1, 0, _period_millis);
-        return __AddTask(profile, _f, _args...);
+        __AddTask(profile, _f, _args...);
     }
     
   private:
@@ -86,19 +91,25 @@ class ThreadPool {
     ThreadPool(size_t _n_threads = 4);
 
     /**
-     * see if there is any task to do.
      *
      * @return:  the index of kImmediate task if exists, else the index of task with
      *           the minimum time to wait until its (next) execution if exists, else -1.
      */
     ssize_t __SelectTask();
+    
+    /**
+     *
+     * @return: true if a new task which is
+     *                  1. kImmediate or
+     *                  2. kAfter with less waiting time
+     *          is added when a specific thread waits for the expiration of a kAfter task.
+     */
+    bool __IsHigherPriorityTaskAddWhenWaiting(TaskProfile* _lhs, size_t _old_n_tasks);
 
     void __CreateWorkerThread();
 
-    void __DeleteTask(size_t _idx);
-    
     /**
-     * @param _now: if it is not given, it will be updated inside the function.
+     * @param _now: if not given, it will be updated inside the function.
      */
     uint64_t __ComputeWaitTime(TaskProfile *_profile, uint64_t _now = 0);
 

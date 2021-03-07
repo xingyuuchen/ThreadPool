@@ -75,6 +75,7 @@ printf("main thread done.\n");
 ```
 The output may go as follows:
 ```
+main thread done.
 task B running...   # at 1th s
 task B done!        # at 2th s
 task A running...
@@ -82,6 +83,7 @@ task A done!        # at 3th s
 ```
 or
 ```
+main thread done.
 task B running...   # at 1th s
 task A running...   # at 2th s
 task B done!

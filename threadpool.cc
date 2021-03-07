@@ -40,7 +40,7 @@ void ThreadPool::__CreateWorkerThread() {
                 }
     
                 this->running_serial_tags_.insert(profile->serial_tag);
-                task = std::move(this->tasks_[idx].second);
+                task = this->tasks_[idx].second;
                 if (profile->type == TaskProfile::kPeriodic) {
                     profile->record = ::gettickcount();
                     profile->seq = TaskProfile::__MakeSeq();
@@ -52,11 +52,7 @@ void ThreadPool::__CreateWorkerThread() {
             {
                 ScopeLock lock(this->mutex_);
                 this->running_serial_tags_.erase(profile->serial_tag);
-                if (profile->type == TaskProfile::kPeriodic) {
-                    tasks_[idx].second = std::move(task);
-                } else {
-                    delete profile;
-                }
+                if (profile->type != TaskProfile::kPeriodic) { delete profile; }
             }
         }
     });
@@ -107,7 +103,8 @@ ssize_t ThreadPool::__SelectTask() {
     return min_wait_time_task_idx;
 }
 
-bool ThreadPool::__IsHigherPriorityTaskAddWhenWaiting(TaskProfile *_lhs, size_t _old_n_tasks)  {
+bool ThreadPool::__IsHigherPriorityTaskAddWhenWaiting(TaskProfile *_lhs, size_t _old_n_tasks) {
+    // FIXME
     if (tasks_.size() == _old_n_tasks) {
         return false;
     }
@@ -141,7 +138,6 @@ ThreadPool::~ThreadPool() {
     cv_.notify_all();
     for (std::thread &thread : workers_) {
         thread.join();
-        printf("joined\n");
     }
     {
         ScopeLock lock(mutex_);

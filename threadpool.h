@@ -81,7 +81,11 @@ class ThreadPool {
     template<class F, class... Args>
     void ExecutePeriodic(int _period_millis, F&& _f, Args&&... _args) {
         TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kPeriodic, -1, 0, _period_millis);
-        __AddTask(profile, _f, _args...);
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            tasks_.push_back(std::make_pair(profile, [=] { _f(_args...); }));
+        }
+        cv_.notify_one();
     }
     
   private:

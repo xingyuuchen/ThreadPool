@@ -92,22 +92,22 @@ class ThreadPool {
     using ScopeLock = std::unique_lock<std::mutex>;
     using TaskPairPtr = std::pair<TaskProfile, std::function<void()>> *;
 
-    ThreadPool(size_t _n_threads = 4);
+    explicit ThreadPool(size_t _n_threads = 4);
 
     /**
      *
-     * A task is regarded Faster than the given {@param _old},
-     * only when the task satisfies either of the conditions below:
+     * A task is considered Faster than the given {@param _old},
+     * only if the task meets either of the following conditions:
      *          1. The task is kImmediate, or
      *          2. The task is kAfter or kPeriodic and
      *             expires earlier than the given {@param _old}.
      *
      * If a faster task is found, it will be picked out from the task queue,
-     * while the {@param _old} will be put in if it is not NULL.
+     * while the {@param _old} will be put back to the queue if it is not NULL.
      *
      * @param _old: Such task will be compared to the others in the task queue.
      *              If it is NULL, any task is faster than the given {@param _old}.
-     * @return: if {@param _old} is kImmediate, return NULL, because no task is faster than a kImmediate one.
+     * @return: if {@param _old} is kImmediate, return NULL, because no task is faster than a kImmediate one,
      *          else return pointer of the kImmediate task if exists,
      *          else return the pointer of task with the minimum time to wait until its (next) execution if exists,
      *          else return NULL, indicating that there is no task faster.

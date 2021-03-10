@@ -2,6 +2,7 @@
 #define OI_SVR_THREADPOOL_H
 
 #include <vector>
+#include <list>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -57,8 +58,7 @@ class ThreadPool {
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     Execute(F&& _f, Args&&... _args) {
-        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kImmediate, -1, 0, 0);
-        return __AddTask(profile, _f, _args...);
+        return __AddTask(TaskProfile::TTiming::kImmediate, -1, 0, 0, _f, _args...);
     }
     
     /**
@@ -67,23 +67,22 @@ class ThreadPool {
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     Execute(int _serial_tag, F&& _f, Args&&... _args) {
-        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kImmediate, _serial_tag, 0, 0);
-        return __AddTask(profile, _f, _args...);
+        return __AddTask(TaskProfile::TTiming::kImmediate, _serial_tag, 0, 0, _f, _args...);
     }
     
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     ExecuteAfter(int _after_millis, F&& _f, Args&&... _args) {
-        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kAfter, -1, _after_millis, 0);
-        return __AddTask(profile, _f, _args...);
+        return __AddTask(TaskProfile::TTiming::kAfter, -1, _after_millis, 0, _f, _args...);
     }
     
     template<class F, class... Args>
     void ExecutePeriodic(int _period_millis, F&& _f, Args&&... _args) {
-        TaskProfile *profile = new TaskProfile(TaskProfile::TTiming::kPeriodic, -1, 0, _period_millis);
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            tasks_.push_back(std::make_pair(profile, [=] { _f(_args...); }));
+            tasks_.push_back(new std::pair<TaskProfile, std::function<void()>>(
+                    TaskProfile(TaskProfile::TTiming::kPeriodic, -1,
+                                0, _period_millis), [=] { _f(_args...); }));
         }
         cv_.notify_one();
     }
@@ -91,24 +90,30 @@ class ThreadPool {
   private:
 
     using ScopeLock = std::unique_lock<std::mutex>;
+    using TaskPairPtr = std::pair<TaskProfile, std::function<void()>> *;
 
     ThreadPool(size_t _n_threads = 4);
 
     /**
      *
-     * @return:  the index of kImmediate task if exists, else the index of task with
-     *           the minimum time to wait until its (next) execution if exists, else -1.
-     */
-    ssize_t __SelectTask();
-    
-    /**
+     * A task is regarded Faster than the given {@param _old},
+     * only when the task satisfies either of the conditions below:
+     *          1. The task is kImmediate, or
+     *          2. The task is kAfter or kPeriodic and
+     *             expires earlier than the given {@param _old}.
      *
-     * @return: true if a new task which is
-     *                  1. kImmediate or
-     *                  2. kAfter with less waiting time
-     *          is added when a specific thread waits for the expiration of a kAfter task.
+     * If a faster task is found, it will be picked out from the task queue,
+     * while the {@param _old} will be put in if it is not NULL.
+     *
+     * @param _old: Such task will be compared to the others in the task queue.
+     *              If it is NULL, any task is faster than the given {@param _old}.
+     * @return: if {@param _old} is kImmediate, return NULL, because no task is faster than a kImmediate one.
+     *          else return pointer of the kImmediate task if exists,
+     *          else return the pointer of task with the minimum time to wait until its (next) execution if exists,
+     *          else return NULL, indicating that there is no task faster.
      */
-    bool __IsHigherPriorityTaskAddWhenWaiting(TaskProfile* _lhs, size_t _old_n_tasks);
+    TaskPairPtr __PickOutTaskFasterThan(TaskPairPtr _old = NULL);
+    
 
     void __CreateWorkerThread();
 
@@ -120,7 +125,7 @@ class ThreadPool {
 
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
-    __AddTask(TaskProfile *_profile, F&& _f, Args&&... _args) {
+    __AddTask(TaskProfile::TTiming _timing, int _serial_tag, int _after, int _period, F&& _f, Args&&... _args) {
         using return_t = typename std::result_of<F(Args...)>::type;
         using pack_task_t = std::packaged_task<return_t(void)>;
         
@@ -128,7 +133,8 @@ class ThreadPool {
         std::future<return_t> ret = task->get_future();
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            tasks_.push_back(std::make_pair(_profile, [=] { (*task)(); }));
+            tasks_.push_back(new std::pair<TaskProfile, std::function<void()>>(
+                    TaskProfile(_timing, _serial_tag, _after, _period), [=] { (*task)(); }));
         }
         cv_.notify_one();
         return ret;
@@ -136,13 +142,13 @@ class ThreadPool {
 
 
   private:
+    std::list<std::pair<TaskProfile, std::function<void()>>*>       tasks_;
     std::vector<std::thread>                                        workers_;
-    std::vector<std::pair<TaskProfile*, std::function<void()>>>     tasks_;
     std::unordered_set<int>                                         running_serial_tags_;
     std::mutex                                                      mutex_;
     std::condition_variable                                         cv_;
     bool                                                            stop_;
-    
+    static const uint64_t                                           kUInt64MaxValue;
 };
 
 #endif //OI_SVR_THREADPOOL_H

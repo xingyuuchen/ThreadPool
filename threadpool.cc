@@ -1,5 +1,21 @@
 #include "threadpool.h"
 
+
+static uint64_t gettickcount() {
+    using namespace std::chrono;
+    time_point<std::chrono::system_clock, milliseconds> tp =
+            time_point_cast<milliseconds>(system_clock::now());
+    return tp.time_since_epoch().count();
+}
+
+TaskProfile::TaskProfile(TTiming _timing, int _serial_tag, int _after, int _period)
+        : type(_timing), serial_tag(_serial_tag), after(_after)
+        , period(_period), seq(__MakeSeq()) {
+    if (type != kImmediate) {
+        record = ::gettickcount();
+    }
+}
+
 const uint64_t ThreadPool::kUInt64MaxValue = 0xffffffffffffffff;
 
 ThreadPool::ThreadPool(size_t _n_threads)

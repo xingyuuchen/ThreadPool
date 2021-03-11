@@ -13,7 +13,7 @@
 #include <iomanip>
 
 
-inline uint64_t gettickcount() {
+static uint64_t gettickcount() {
     using namespace std::chrono;
     time_point<std::chrono::system_clock, milliseconds> tp =
             time_point_cast<milliseconds>(system_clock::now());

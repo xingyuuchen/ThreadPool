@@ -1,5 +1,5 @@
-#ifndef OI_SVR_THREADPOOL_H
-#define OI_SVR_THREADPOOL_H
+#ifndef THREADPOOL_H
+#define THREADPOOL_H
 
 #include <vector>
 #include <list>
@@ -53,7 +53,6 @@ class ThreadPool {
         static ThreadPool instance;
         return instance;
     }
-    
     
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
@@ -148,7 +147,7 @@ class ThreadPool {
     std::mutex                                                      mutex_;
     std::condition_variable                                         cv_;
     bool                                                            stop_;
-    static const uint64_t                                           kUInt64MaxValue;
+    static uint64_t const                                           kUInt64MaxValue;
 };
 
-#endif //OI_SVR_THREADPOOL_H
+#endif //THREADPOOL_H

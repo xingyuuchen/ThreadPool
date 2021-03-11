@@ -25,8 +25,8 @@ void ThreadPool::__CreateWorkerThread() {
                                                 [&, this] {
                             /*
                              * If task_pair is NULL, indicating it has not been chosen, then choose the fastest task.
-                             * If task_pair has already been chosen(not NULL), see if there is any faster task added
-                             * while waiting for the expiration of current timed task.
+                             * If task_pair is not NULL, indicating it has already been chosen,
+                             * see if there is any faster task added while waiting for the expiration of current timed task.
                              */
                             TaskPairPtr faster = __PickOutTaskFasterThan(task_pair);
                             if (faster) {
@@ -96,10 +96,7 @@ ThreadPool::TaskPairPtr ThreadPool::__PickOutTaskFasterThan(TaskPairPtr _old/* =
                 min_wait_time_iter = it;
                 break;
             }
-            ++it;
-            continue;
-        }
-        if (wait < min_wait_time) {
+        } else if (wait < min_wait_time) {
             min_wait_time = wait;
             min_wait_time_iter = it;
         }

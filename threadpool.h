@@ -44,6 +44,12 @@ class ThreadPool {
         return instance;
     }
     
+    /**
+     * Initializes ThreadPool singleton in advance,
+     * instead of lazy loading when first used.
+     */
+    void Init();
+    
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     Execute(F&& _f, Args&&... _args) {
@@ -78,27 +84,27 @@ class ThreadPool {
     
   private:
 
-    using ScopeLock = std::unique_lock<std::mutex>;
+    using ScopedLock = std::unique_lock<std::mutex>;
     using TaskPairPtr = std::pair<TaskProfile, std::function<void()>> *;
 
     explicit ThreadPool(size_t _n_threads = 4);
 
     /**
      *
-     * A task is considered Faster than the given {@param _old},
+     * A task is considered Faster than another,
      * only if the task meets either of the following conditions:
-     *          1. The task is kImmediate, or
-     *          2. The task is kAfter or kPeriodic and
-     *             expires earlier than the given {@param _old}.
+     *          1. The task is kImmediate and the other is not, or
+     *          2. The task is kAfter or kPeriodic and expires earlier than the other.
      *
      * If a faster task is found, it will be picked out from the task queue,
-     * while the {@param _old} will be put back to the queue if it is not NULL.
+     * while the {@param _old} will be push back to the queue if it is not NULL.
      *
      * @param _old: Such task will be compared to the others in the task queue.
      *              If it is NULL, any task is faster than the given {@param _old}.
      * @return: if {@param _old} is kImmediate, return NULL, because no task is faster than a kImmediate one,
      *          else return pointer of the kImmediate task if exists,
-     *          else return the pointer of task with the minimum time to wait until its (next) execution if exists,
+     *          else return the pointer of the task with the minimum time to wait
+     *          until its (next) execution if exists,
      *          else return NULL, indicating that there is no task faster.
      */
     TaskPairPtr __PickOutTaskFasterThan(TaskPairPtr _old = NULL);
@@ -121,7 +127,7 @@ class ThreadPool {
         auto task = std::make_shared<pack_task_t>(std::bind(_f, _args...));
         std::future<return_t> ret = task->get_future();
         {
-            std::unique_lock<std::mutex> lock(mutex_);
+            ScopedLock lock(mutex_);
             tasks_.push_back(new std::pair<TaskProfile, std::function<void()>>(
                     TaskProfile(_timing, _serial_tag, _after, _period), [=] { (*task)(); }));
         }

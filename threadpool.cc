@@ -16,7 +16,9 @@ TaskProfile::TaskProfile(TTiming _timing, int _serial_tag, int _after, int _peri
     }
 }
 
-const uint64_t ThreadPool::kUInt64MaxValue = 0xffffffffffffffff;
+uint64_t const ThreadPool::kUInt64MaxValue = 0xffffffffffffffff;
+
+void ThreadPool::Init() {}
 
 ThreadPool::ThreadPool(size_t _n_threads)
         : stop_(false) {
@@ -30,9 +32,8 @@ void ThreadPool::__CreateWorkerThread() {
         while (true) {
             TaskPairPtr task_pair = NULL;
             TaskProfile *profile = NULL;
-            std::function<void()> task;
             {
-                ScopeLock lock(this->mutex_);
+                ScopedLock lock(this->mutex_);
                 uint64_t wait_time = 10000;
                 bool is_waiting_timed_task = false;
                 while (true) {
@@ -69,15 +70,14 @@ void ThreadPool::__CreateWorkerThread() {
                 }
     
                 this->running_serial_tags_.insert(profile->serial_tag);
-                task = task_pair->second;
                 if (profile->type == TaskProfile::kPeriodic) {
                     profile->record = ::gettickcount();
                     tasks_.push_back(task_pair);
                 }
             }
-            task();
+            task_pair->second();
             {
-                ScopeLock lock(this->mutex_);
+                ScopedLock lock(this->mutex_);
                 this->running_serial_tags_.erase(profile->serial_tag);
                 if (profile->type != TaskProfile::kPeriodic) { delete task_pair; }
             }
@@ -144,7 +144,7 @@ uint64_t ThreadPool::__ComputeWaitTime(TaskProfile *_profile, uint64_t _now) {
 
 ThreadPool::~ThreadPool() {
     {
-        ScopeLock lock(mutex_);
+        ScopedLock lock(mutex_);
         stop_ = true;
     }
     cv_.notify_all();
@@ -152,7 +152,7 @@ ThreadPool::~ThreadPool() {
         thread.join();
     }
     {
-        ScopeLock lock(mutex_);
+        ScopedLock lock(mutex_);
         for (TaskPairPtr task_pair : tasks_) {
             delete task_pair;
         }

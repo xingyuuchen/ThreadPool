@@ -1,7 +1,7 @@
 ## This is A ThreadPool written in C++11
 
 ### Basic Usage:
-```
+```c++
 std::future<int> future;
 
 future = ThreadPool::Instance().Execute([] (int i) -> int {
@@ -13,7 +13,7 @@ printf("async func return %d.\n", future.get());
 ```
 
 ### Advance Usage1 (execute with serial tag):
-```
+```c++
 // Define the serial_tag of the tasks which you want to execute serially
 int taskA_serial_tag = 1;
 int taskB_serial_tag = 2;
@@ -60,7 +60,7 @@ This is useful for scenarios where you just want the tasks execute
 asynchronously from the main thread but not concurrently themselves.
 
 ### Advance Usage2 (execute after...):
-```
+```c++
 ThreadPool::Instance().ExecuteAfter(2000, [=] {
     printf("task A running...\n");
     sleep(1);
@@ -91,7 +91,7 @@ task A done!        # at 3th s
 ```
 
 ### Advance Usage3 (execute periodically):
-```
+```c++
 ThreadPool::Instance().ExecutePeriodic(1000, [=] {
     printf("task running...\n");
 });

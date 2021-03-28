@@ -107,10 +107,10 @@ class ThreadPool {
      *          until its (next) execution if exists,
      *          else return NULL, indicating that there is no task faster.
      */
-    TaskPairPtr __PickOutTaskFasterThan(TaskPairPtr _old = NULL);
+    TaskPairPtr __PickOutTaskFasterThan(TaskPairPtr _old = nullptr);
     
 
-    void __CreateWorkerThread();
+    void __WorkerEntry();
 
     /**
      * @param _now: if not given, it will be updated inside the function.
@@ -143,7 +143,6 @@ class ThreadPool {
     std::mutex                                                      mutex_;
     std::condition_variable                                         cv_;
     bool                                                            stop_;
-    static uint64_t const                                           kUInt64MaxValue;
 };
 
 #endif //THREADPOOL_H

@@ -16,84 +16,80 @@ TaskProfile::TaskProfile(TTiming _timing, int _serial_tag, int _after, int _peri
     }
 }
 
-uint64_t const ThreadPool::kUInt64MaxValue = 0xffffffffffffffff;
-
 void ThreadPool::Init() {}
 
 ThreadPool::ThreadPool(size_t _n_threads)
         : stop_(false) {
     while (_n_threads--) {
-        __CreateWorkerThread();
+        workers_.emplace_back(std::thread(&ThreadPool::__WorkerEntry, this));
     }
 }
 
-void ThreadPool::__CreateWorkerThread() {
-    workers_.emplace_back([this] {
-        while (true) {
-            TaskPairPtr task_pair = NULL;
-            TaskProfile *profile = NULL;
-            {
-                ScopedLock lock(this->mutex_);
-                uint64_t wait_time = 10000;
-                bool is_waiting_timed_task = false;
-                while (true) {
-                    bool pred = this->cv_.wait_for(lock,
-                                                   std::chrono::milliseconds(wait_time),
-                                                [&, this] {
-                            /*
-                             * If task_pair is NULL, indicating it has not been chosen, then choose the fastest task.
-                             * If task_pair is not NULL, indicating it has already been chosen,
-                             * see if there is any faster task added while waiting for the expiration of current timed task.
-                             */
-                            TaskPairPtr faster = __PickOutTaskFasterThan(task_pair);
-                            if (faster) {
-                                task_pair = faster;
-                                return true;
-                            }
-                            return this->stop_ && task_pair == NULL;
-                    });
-                    
-                    if (!pred && !is_waiting_timed_task) { continue; }
-                    
-                    if (task_pair) {
-                        profile = &task_pair->first;
-                        uint64_t wait = __ComputeWaitTime(profile);
-                        if (wait > 0) {
-                            wait_time = wait;
-                            is_waiting_timed_task = true;
-                            continue;
+void ThreadPool::__WorkerEntry() {
+    while (true) {
+        TaskPairPtr task_pair = nullptr;
+        TaskProfile *profile = nullptr;
+        {
+            ScopedLock lock(this->mutex_);
+            uint64_t wait_time = 10000;
+            bool is_waiting_timed_task = false;
+            while (true) {
+                bool pred = this->cv_.wait_for(lock,
+                                               std::chrono::milliseconds(wait_time),
+                                            [&, this] {
+                        /*
+                         * If task_pair is NULL, indicating it has not been chosen, then choose the fastest task.
+                         * If task_pair is not NULL, indicating it has already been chosen,
+                         * see if there is any faster task added while waiting for the expiration of current timed task.
+                         */
+                        TaskPairPtr faster = __PickOutTaskFasterThan(task_pair);
+                        if (faster) {
+                            task_pair = faster;
+                            return true;
                         }
-                        break;
+                        return this->stop_;
+                });
+                
+                if (!pred && !is_waiting_timed_task) { continue; }
+                
+                if (task_pair) {
+                    profile = &task_pair->first;
+                    uint64_t wait = __ComputeWaitTime(profile);
+                    if (wait > 0) {
+                        wait_time = wait;
+                        is_waiting_timed_task = true;
+                        continue;
                     }
-                    // no task needs to be executed or will be executed
-                    return;
+                    break;
                 }
-    
-                this->running_serial_tags_.insert(profile->serial_tag);
-                if (profile->type == TaskProfile::kPeriodic) {
-                    profile->record = ::gettickcount();
-                    tasks_.push_back(task_pair);
-                }
+                // no task needs to be executed or will be executed
+                return;
             }
-            task_pair->second();
-            {
-                ScopedLock lock(this->mutex_);
-                this->running_serial_tags_.erase(profile->serial_tag);
-                if (profile->type != TaskProfile::kPeriodic) { delete task_pair; }
+
+            this->running_serial_tags_.insert(profile->serial_tag);
+            if (profile->type == TaskProfile::kPeriodic) {
+                profile->record = ::gettickcount();
+                tasks_.push_back(task_pair);
             }
         }
-    });
+        task_pair->second();
+        {
+            ScopedLock lock(this->mutex_);
+            this->running_serial_tags_.erase(profile->serial_tag);
+            if (profile->type != TaskProfile::kPeriodic) { delete task_pair; }
+        }
+    }
 }
 
 
-ThreadPool::TaskPairPtr ThreadPool::__PickOutTaskFasterThan(TaskPairPtr _old/* = NULL*/) {
+ThreadPool::TaskPairPtr ThreadPool::__PickOutTaskFasterThan(TaskPairPtr _old/* = nullptr*/) {
     uint64_t now = ::gettickcount();
     
-    uint64_t old_wait = kUInt64MaxValue;
+    auto old_wait = (uint64_t) - 1;
     if (_old) {
         old_wait = __ComputeWaitTime(&_old->first, now);
         if (old_wait <= 0) {
-            return NULL;
+            return nullptr;
         }
     }
     
@@ -125,7 +121,7 @@ ThreadPool::TaskPairPtr ThreadPool::__PickOutTaskFasterThan(TaskPairPtr _old/* =
         }
         return *min_wait_time_iter;
     }
-    return NULL;
+    return nullptr;
 }
 
 uint64_t ThreadPool::__ComputeWaitTime(TaskProfile *_profile, uint64_t _now) {
@@ -149,7 +145,7 @@ ThreadPool::~ThreadPool() {
     }
     cv_.notify_all();
     for (std::thread &thread : workers_) {
-        thread.join();
+        thread.detach();
     }
     {
         ScopedLock lock(mutex_);

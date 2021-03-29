@@ -37,6 +37,12 @@ void ThreadPool::__WorkerEntry() {
                 bool pred = this->cv_.wait_for(lock,
                                                std::chrono::milliseconds(wait_time),
                                             [&, this] {
+                        if (this->stop_) {
+                            if (task_pair != nullptr) {
+                                delete task_pair, task_pair = nullptr;
+                            }
+                            return true;
+                        }
                         /*
                          * If task_pair is NULL, indicating it has not been chosen, then choose the fastest task.
                          * If task_pair is not NULL, indicating it has already been chosen,
@@ -47,8 +53,10 @@ void ThreadPool::__WorkerEntry() {
                             task_pair = faster;
                             return true;
                         }
-                        return this->stop_;
+                        return false;
                 });
+                
+                if (this->stop_) { return; }
                 
                 if (!pred && !is_waiting_timed_task) { continue; }
                 
@@ -62,21 +70,20 @@ void ThreadPool::__WorkerEntry() {
                     }
                     break;
                 }
-                // no task needs to be executed or will be executed
-                return;
             }
-
             this->running_serial_tags_.insert(profile->serial_tag);
-            if (profile->type == TaskProfile::kPeriodic) {
-                profile->record = ::gettickcount();
-                tasks_.push_back(task_pair);
-            }
+            
         }
-        task_pair->second();
+        task_pair->second();   // executing task...
         {
             ScopedLock lock(this->mutex_);
             this->running_serial_tags_.erase(profile->serial_tag);
-            if (profile->type != TaskProfile::kPeriodic) { delete task_pair; }
+            if (profile->type == TaskProfile::kPeriodic) {
+                profile->record = ::gettickcount();
+                tasks_.push_back(task_pair);
+            } else {
+                delete task_pair;
+            }
         }
     }
 }
@@ -142,15 +149,13 @@ ThreadPool::~ThreadPool() {
     {
         ScopedLock lock(mutex_);
         stop_ = true;
+        for (TaskPairPtr &task_pair : tasks_) {
+            delete task_pair, task_pair = nullptr;
+        }
+        tasks_.clear();
     }
     cv_.notify_all();
     for (std::thread &thread : workers_) {
-        thread.detach();
-    }
-    {
-        ScopedLock lock(mutex_);
-        for (TaskPairPtr task_pair : tasks_) {
-            delete task_pair;
-        }
+        thread.join();
     }
 }

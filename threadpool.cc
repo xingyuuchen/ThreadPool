@@ -29,62 +29,62 @@ void ThreadPool::__WorkerEntry() {
     while (true) {
         TaskPairPtr task_pair = nullptr;
         TaskProfile *profile = nullptr;
-        {
-            ScopedLock lock(this->mutex_);
-            uint64_t wait_time = 10000;
-            bool is_waiting_timed_task = false;
-            while (true) {
-                bool pred = this->cv_.wait_for(lock,
-                                               std::chrono::milliseconds(wait_time),
-                                            [&, this] {
-                        if (this->stop_) {
-                            if (task_pair != nullptr) {
-                                delete task_pair, task_pair = nullptr;
-                            }
-                            return true;
+        
+        UniqueLock lock(this->mutex_);
+        uint64_t wait_time = 10000;
+        bool is_waiting_timed_task = false;
+        while (true) {
+            bool pred = this->cv_.wait_for(lock,
+                                           std::chrono::milliseconds(wait_time),
+                                        [&, this] {
+                    if (this->stop_) {
+                        if (task_pair != nullptr) {
+                            delete task_pair, task_pair = nullptr;
                         }
-                        /*
-                         * If task_pair is NULL, indicating it has not been chosen, then choose the fastest task.
-                         * If task_pair is not NULL, indicating it has already been chosen,
-                         * see if there is any faster task added while waiting for the expiration of current timed task.
-                         */
-                        TaskPairPtr faster = __PickOutTaskFasterThan(task_pair);
-                        if (faster) {
-                            task_pair = faster;
-                            return true;
-                        }
-                        return false;
-                });
-                
-                if (this->stop_) { return; }
-                
-                if (!pred && !is_waiting_timed_task) { continue; }
-                
-                if (task_pair) {
-                    profile = &task_pair->first;
-                    uint64_t wait = __ComputeWaitTime(profile);
-                    if (wait > 0) {
-                        wait_time = wait;
-                        is_waiting_timed_task = true;
-                        continue;
+                        return true;
                     }
-                    break;
-                }
-            }
-            this->running_serial_tags_.insert(profile->serial_tag);
+                    /*
+                     * If task_pair is NULL, indicating it has not been chosen, then choose the fastest task.
+                     * If task_pair is not NULL, indicating it has already been chosen,
+                     * see if there is any faster task added while waiting for the expiration of current timed task.
+                     */
+                    TaskPairPtr faster = __PickOutTaskFasterThan(task_pair);
+                    if (faster) {
+                        task_pair = faster;
+                        return true;
+                    }
+                    return false;
+            });
             
-        }
-        task_pair->second();   // executing task...
-        {
-            ScopedLock lock(this->mutex_);
-            this->running_serial_tags_.erase(profile->serial_tag);
-            if (profile->type == TaskProfile::kPeriodic) {
-                profile->record = ::gettickcount();
-                tasks_.push_back(task_pair);
-            } else {
-                delete task_pair;
+            if (this->stop_) { return; }
+            
+            if (!pred && !is_waiting_timed_task) { continue; }
+            
+            if (task_pair) {
+                profile = &task_pair->first;
+                uint64_t wait = __ComputeWaitTime(profile);
+                if (wait > 0) {
+                    wait_time = wait;
+                    is_waiting_timed_task = true;
+                    continue;
+                }
+                break;
             }
         }
+        this->running_serial_tags_.insert(profile->serial_tag);
+        lock.unlock();
+        
+        task_pair->second();   // executing task...
+    
+        lock.lock();
+        this->running_serial_tags_.erase(profile->serial_tag);
+        if (profile->type == TaskProfile::kPeriodic) {
+            profile->record = ::gettickcount();
+            tasks_.push_back(task_pair);
+        } else {
+            delete task_pair, task_pair = nullptr;
+        }
+        
     }
 }
 
@@ -147,7 +147,7 @@ uint64_t ThreadPool::__ComputeWaitTime(TaskProfile *_profile, uint64_t _now) {
 
 ThreadPool::~ThreadPool() {
     {
-        ScopedLock lock(mutex_);
+        LockGuard lock(mutex_);
         stop_ = true;
         for (TaskPairPtr &task_pair : tasks_) {
             delete task_pair, task_pair = nullptr;

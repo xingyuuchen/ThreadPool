@@ -74,7 +74,7 @@ class ThreadPool {
     template<class F, class... Args>
     void ExecutePeriodic(int _period_millis, F&& _f, Args&&... _args) {
         {
-            std::unique_lock<std::mutex> lock(mutex_);
+            LockGuard lock(mutex_);
             tasks_.push_back(new std::pair<TaskProfile, std::function<void()>>(
                     TaskProfile(TaskProfile::TTiming::kPeriodic, -1,
                                 0, _period_millis), [=] { _f(_args...); }));
@@ -84,7 +84,8 @@ class ThreadPool {
     
   private:
 
-    using ScopedLock = std::unique_lock<std::mutex>;
+    using UniqueLock = std::unique_lock<std::mutex>;
+    using LockGuard = std::unique_lock<std::mutex>;
     using TaskPairPtr = std::pair<TaskProfile, std::function<void()>> *;
 
     explicit ThreadPool(size_t _n_threads = 4);
@@ -107,7 +108,7 @@ class ThreadPool {
      *          until its (next) execution if exists,
      *          else return NULL, indicating that there is no task faster.
      */
-    TaskPairPtr __PickOutTaskFasterThan(TaskPairPtr _old = NULL);
+    TaskPairPtr __PickOutTaskFasterThan(TaskPairPtr _old = nullptr);
     
 
     void __CreateWorkerThread();
@@ -127,7 +128,7 @@ class ThreadPool {
         auto task = std::make_shared<pack_task_t>(std::bind(_f, _args...));
         std::future<return_t> ret = task->get_future();
         {
-            ScopedLock lock(mutex_);
+            LockGuard lock(mutex_);
             tasks_.push_back(new std::pair<TaskProfile, std::function<void()>>(
                     TaskProfile(_timing, _serial_tag, _after, _period), [=] { (*task)(); }));
         }
@@ -143,7 +144,6 @@ class ThreadPool {
     std::mutex                                                      mutex_;
     std::condition_variable                                         cv_;
     bool                                                            stop_;
-    static uint64_t const                                           kUInt64MaxValue;
 };
 
 #endif //THREADPOOL_H

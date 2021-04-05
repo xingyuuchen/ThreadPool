@@ -1,5 +1,4 @@
-#ifndef THREADPOOL_H
-#define THREADPOOL_H
+#pragma once
 
 #include <vector>
 #include <list>
@@ -146,4 +145,3 @@ class ThreadPool {
     bool                                                            stop_;
 };
 
-#endif //THREADPOOL_H

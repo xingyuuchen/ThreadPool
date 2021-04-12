@@ -18,6 +18,8 @@ TaskProfile::TaskProfile(TTiming _timing, int _serial_tag, int _after, int _peri
 
 void ThreadPool::Init() {}
 
+const int ThreadPool::kNoSerialTag = -1;
+
 ThreadPool::ThreadPool(size_t _n_threads)
         : stop_(false) {
     while (_n_threads--) {
@@ -105,7 +107,7 @@ ThreadPool::TaskPairPtr ThreadPool::__PickOutTaskFasterThan(TaskPairPtr _old/* =
         uint64_t wait = __ComputeWaitTime(profile, now);
         if (wait == 0) {
             int serial_tag = profile->serial_tag;
-            if (serial_tag == -1 || running_serial_tags_.find(serial_tag)
+            if (serial_tag == kNoSerialTag || running_serial_tags_.find(serial_tag)
                         == running_serial_tags_.end()) {
                 min_wait_time_iter = it;
                 break;

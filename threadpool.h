@@ -52,7 +52,7 @@ class ThreadPool {
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     Execute(F&& _f, Args&&... _args) {
-        return __AddTask(TaskProfile::TTiming::kImmediate, -1, 0, 0, _f, _args...);
+        return __AddTask(TaskProfile::TTiming::kImmediate, kNoSerialTag, 0, 0, _f, _args...);
     }
     
     /**
@@ -67,7 +67,7 @@ class ThreadPool {
     template<class F, class... Args>
     std::future<typename std::result_of<F(Args...)>::type>
     ExecuteAfter(int _after_millis, F&& _f, Args&&... _args) {
-        return __AddTask(TaskProfile::TTiming::kAfter, -1, _after_millis, 0, _f, _args...);
+        return __AddTask(TaskProfile::TTiming::kAfter, kNoSerialTag, _after_millis, 0, _f, _args...);
     }
     
     template<class F, class... Args>
@@ -75,7 +75,7 @@ class ThreadPool {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             tasks_.push_back(new std::pair<TaskProfile, std::function<void()>>(
-                    TaskProfile(TaskProfile::TTiming::kPeriodic, -1,
+                    TaskProfile(TaskProfile::TTiming::kPeriodic, kNoSerialTag,
                                 0, _period_millis), [=] { _f(_args...); }));
         }
         cv_.notify_one();
@@ -140,6 +140,7 @@ class ThreadPool {
     std::list<std::pair<TaskProfile, std::function<void()>>*>       tasks_;
     std::vector<std::thread>                                        workers_;
     std::unordered_set<int>                                         running_serial_tags_;
+    const static int                                                kNoSerialTag;
     std::mutex                                                      mutex_;
     std::condition_variable                                         cv_;
     bool                                                            stop_;

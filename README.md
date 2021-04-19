@@ -15,7 +15,7 @@ If you call future.get() in the main thread, the latter waits for the async retu
 otherwise the main thread ends directly just because there's nothing to do.
 
 
-### Advance Usage1 (execute with serial tag):
+### Advanced Usage1: Execute with Serial-Tag
 ```c++
 // Define the serial_tag of the tasks which you want to execute serially
 int taskA_serial_tag = 1;
@@ -64,7 +64,7 @@ Because tasks with the same `serial_tag` execute serially.
 This is useful for scenarios where you just want the tasks execute 
 asynchronously from the main thread but not concurrently themselves.
 
-### Advance Usage2 (execute after...):
+### Advanced Usage 2: Execute After
 ```c++
 ThreadPool::Instance().ExecuteAfter(2000, [=] {
     printf("task A running...\n");
@@ -95,7 +95,7 @@ task B done!
 task A done!        # at 3th sec
 ```
 
-### Advance Usage3 (execute periodically):
+### Advanced Usage 3: Execute Periodically
 ```c++
 ThreadPool::Instance().ExecutePeriodic(1000, [=] {
     printf("task running...\n");

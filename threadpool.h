@@ -8,13 +8,11 @@
 #include <functional>
 #include <future>
 #include <unordered_set>
-#include <chrono>
-#include <iomanip>
 
 
 struct TaskProfile {
     enum TTiming {
-        kImmediate,
+        kImmediate = 0,
         kAfter,
         kPeriodic,
     };
@@ -27,7 +25,7 @@ struct TaskProfile {
     int         serial_tag;
     int         after;
     int         period;
-    uint64_t    record; // for kAfter:creating ts ; for kPeriodic:last running ts.
+    uint64_t    record; // for kAfter it's creating ts; for kPeriodic it's last running ts.
     uint64_t    seq;
     static const uint64_t kInvalidSeq = 0;
 };
